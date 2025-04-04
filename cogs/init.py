@@ -25,7 +25,7 @@ class InitCog(commands.Cog):
     # Встановлюємо боту активність
     @commands.Cog.listener()
     async def on_ready(self):
-        activity = discord.Game(name="Аве Вітер! Най живуть вітряні степи! (v2.1)")
+        activity = discord.Game(name="розглядає перекотиполе")
         await self.bot.change_presence(status=discord.Status.idle, activity=activity)
 
 # Реєструємо cog
