@@ -1,9 +1,11 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from templates import ebmtemp
 import sqlite3
 from decimal import Decimal, ROUND_HALF_UP
 from config import *
+from typing import Optional
 
 class ProfileCog(commands.Cog):
     def __init__(self, bot):
@@ -22,12 +24,15 @@ class ProfileCog(commands.Cog):
                 cursor.execute('INSERT INTO Users VALUES (?, ?, ?, ?, ?)', (member.id, "Відсутні", 0, "Опис профілю не встановлений.", None))
                 connection.commit()
 
-    @commands.slash_command(name='profile', description='Відображення профілю користувача')
+    @app_commands.command(name='profile', description='Відображення профілю користувача')
+    @app_commands.describe(
+        member="Учасник, чий профіль показати (якщо не вказано - покаже ваш)" # <--- Опис аргументу
+    )
     async def profile(
-    self,
-    ctx,
-    member: discord.Option(discord.Member, required = False, description="Учасник")
-        ):    
+        self,
+        interaction: discord.Interaction,              # <--- interaction замість ctx
+        member: Optional[discord.Member] = None        # <--- Необов'язковий аргумент discord.Member
+    ):
 
         member = member or ctx.author
 
@@ -81,12 +86,15 @@ class ProfileCog(commands.Cog):
 
             connection.commit()
 
-    @commands.slash_command(name='set-image', description='Встановити банер профілю')
+    @app_commands.command(name='set-image', description='Встановити банер профілю')
+    @app_commands.describe(
+        image_link="Пряме посилання на картинку банера (наприклад, https://... .png)" # <--- Опис аргументу
+    )
     async def setimage(
         self,
-        ctx,
-        image_link: discord.Option(str, required = True, description="Пряме посилання на картинку банера.")
-        ):    
+        interaction: discord.Interaction, # <--- interaction замість ctx
+        image_link: str                   # <--- Стандартний тип str (обов'язковий за замовчуванням)
+    ):   
 
         await self.checkadd(ctx, ctx.author)
 
@@ -97,12 +105,15 @@ class ProfileCog(commands.Cog):
 
         await ctx.respond(embed=ebmtemp.create("Успіх", "Посилання встановлено банером профілю! :sparkling_heart:"))
 
-    @commands.slash_command(name='set-description', description='Встановити опис профілю')
+    @app_commands.command(name='set-description', description='Встановити опис профілю')
+    @app_commands.describe(
+        text="Текст опису вашого профілю" # <--- Опис аргументу
+    )
     async def setdescription(
         self,
-        ctx,
-        text: discord.Option(str, required = True, description="Опис профілю")
-        ):    
+        interaction: discord.Interaction, # <--- interaction замість ctx
+        text: str                         # <--- Стандартний тип str (обов'язковий за замовчуванням)
+    ):
 
         await self.checkadd(ctx, ctx.author)
 
@@ -114,13 +125,17 @@ class ProfileCog(commands.Cog):
         await ctx.respond(embed=ebmtemp.create("Успіх", f"Опис успішно встановлений. :sparkling_heart: \n```{text}```"))
 
 
-    @commands.slash_command(name='set-admin-response', description='Встановити адмінське зауваження користувачу.')
+    @app_commands.command(name='set-admin-response', description='Встановити адмінське зауваження користувачу.')
+    @app_commands.describe(
+        member="Учасник, якому встановлюється зауваження", # <--- Опис аргументу
+        text="Текст адмінського зауваження"                # <--- Опис аргументу
+    )
     async def setadminresponse(
         self,
-        ctx,
-        member: discord.Option(discord.Member, description="Учасник"),
-        text: discord.Option(str, required = True, description="Текст адмінського відгуку")
-        ):    
+        interaction: discord.Interaction, # <--- interaction замість ctx
+        member: discord.Member,           # <--- Стандартний тип discord.Member
+        text: str                         # <--- Стандартний тип str
+    ):
 
         await self.checkadd(ctx, member)
 
@@ -136,5 +151,5 @@ class ProfileCog(commands.Cog):
         await ctx.respond(embed=ebmtemp.create("Успіх", f"Адмінське зауваження успішно встановлене. :sparkling_heart: \n```{text}```"))
 
 # Реєстрація cog
-def setup(bot):
-    bot.add_cog(ProfileCog(bot))
+async def setup(bot):
+    await bot.add_cog(ProfileCog(bot))

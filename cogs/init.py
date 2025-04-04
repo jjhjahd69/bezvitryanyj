@@ -1,6 +1,8 @@
 from config import *
 import discord
 from discord.ext import commands 
+from discord import app_commands
+from typing import Optional
 
 class InitCog(commands.Cog):
     def __init__(self, bot):
@@ -27,5 +29,5 @@ class InitCog(commands.Cog):
         await self.bot.change_presence(status=discord.Status.idle, activity=activity)
 
 # Реєструємо cog
-def setup(bot):
-    bot.add_cog(InitCog(bot))
+async def setup(bot):
+    await bot.add_cog(InitCog(bot))

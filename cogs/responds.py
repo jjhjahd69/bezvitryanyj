@@ -1,11 +1,13 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from templates import ebmtemp
 import sqlite3
 from datetime import datetime
 import math
 import json
 from config import *
+from typing import Optional
 
 class RespondsCog(commands.Cog):
     def __init__(self, bot):
@@ -42,14 +44,23 @@ class RespondsCog(commands.Cog):
 
             await interaction.response.send_message(embed=ebmtemp.create("Успіх", "Ваш відгук успішно доданий!"), ephemeral=True)
 
-    @commands.slash_command(name='to-respond', description='Додати відгук користувачу')
+    @app_commands.command(name='to-respond', description='Додати відгук користувачу')
+    @app_commands.describe(
+        member="Учасник, якому ви залишаєте відгук",
+        game_id="Унікальний індитифікатор гри, в якій ви брали участь", # Перейменував gameid -> game_id для консистентності
+        role_type="Ви пишете відгук на користувача як на?" # Перейменував type -> role_type
+    )
+    @app_commands.choices(role_type=[ # Визначаємо варіанти для 'role_type'
+        app_commands.Choice(name="Гравця", value="player"), # Значення, яке отримає код
+        app_commands.Choice(name="Майстра", value="master")
+    ])
     async def torespond(
         self,
-        ctx,
-        member: discord.Option(discord.Member, description="Учасник"),
-        gameid: discord.Option(int, description="Унікальний номер рольової гри"),
-        type: discord.Option(str, choices=["Гравця", "Майстра"], description="Ви пишете відгук на користувача як на?")
-        ):    
+        interaction: discord.Interaction,    # <--- interaction замість ctx
+        member: discord.Member,              # <--- Стандартний тип
+        game_id: int,                        # <--- Стандартний тип, перейменовано
+        role_type: app_commands.Choice[str]  # <--- Тип Choice, перейменовано
+    ):
 
         if ctx.author.id == member.id:
             await ctx.respond(embed=ebmtemp.create("Помилка", "Ви не можете залишити відгук на самого себе, як би вам не хотілося :С"), ephemeral=True)
@@ -190,13 +201,21 @@ class RespondsCog(commands.Cog):
             
             await interaction.response.edit_message(embed=embed, view=self)
 
-    @commands.slash_command(name='responses', description='Відображення відгуків користувача')
+    @app_commands.command(name='responses', description='Відображення відгуків користувача')
+    @app_commands.describe(
+        member="Учасник, чиї відгуки показати (за замовчуванням - ваші)",
+        review_role_type="Тип відгуків для фільтрації (необов'язково)" # Перейменував для ясності
+    )
+    @app_commands.choices(review_role_type=[ # Визначаємо варіанти для 'review_role_type'
+        app_commands.Choice(name="Як Гравця", value="player"),
+        app_commands.Choice(name="Як Майстра", value="master")
+    ])
     async def responses(
         self,
-        ctx, 
-        member: discord.Option(discord.Member, required = False, description="Учасник"),
-        review_type: discord.Option(str, required = False, choices=["Гравця", "Майстра"], description="Тип відгуків")
-        ):
+        interaction: discord.Interaction,               # <--- interaction замість ctx
+        member: Optional[discord.Member] = None,        # <--- Необов'язковий учасник
+        review_role_type: Optional[app_commands.Choice[str]] = None # <--- Необов'язковий вибір типу
+    ):
 
         member = member or ctx.author
         review_type = review_type or "Гравця"
@@ -218,5 +237,5 @@ class RespondsCog(commands.Cog):
         await ctx.respond(embed=embed, view=view, ephemeral=True)
 
 # Реєстрація cog
-def setup(bot):
-    bot.add_cog(RespondsCog(bot))
+async def setup(bot):
+    await bot.add_cog(RespondsCog(bot))
