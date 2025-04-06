@@ -75,11 +75,11 @@ class ProfileCog(commands.Cog):
 
                     await cursor.execute('SELECT AVG(rate) AS avg_rate FROM responses WHERE receiver = %s AND type = %s', (member.id, 2))
                     playerrate_dict = await cursor.fetchone()
-                    playerrate = Decimal(playerrate_dict["avg_rate"].quantize(Decimal('0.0'), rounding=ROUND_HALF_UP))
+                    playerrate = Decimal(playerrate_dict["avg_rate"] or 0).quantize(Decimal('0.0'), rounding=ROUND_HALF_UP)
 
                     await cursor.execute('SELECT AVG(rate) AS avg_rate FROM responses WHERE receiver = %s AND type = %s', (member.id, 1))
                     masterrate_dict = await cursor.fetchone()
-                    masterrate = Decimal(masterrate_dict["avg_rate"].quantize(Decimal('0.0'), rounding=ROUND_HALF_UP))
+                    masterrate = Decimal(masterrate_dict["avg_rate"] or 0).quantize(Decimal('0.0'), rounding=ROUND_HALF_UP)
                 
                     await cursor.execute("SELECT id FROM users WHERE userid = %s", (member.id,))
                     user_id = await cursor.fetchone()
