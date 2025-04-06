@@ -27,6 +27,15 @@ class InitCog(commands.Cog):
     async def on_ready(self):
         activity = discord.Game(name="розглядає перекотиполе")
         await self.bot.change_presence(status=discord.Status.idle, activity=activity)
+    
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
+        print(f"{member} зайшов на сервер!")
+        if member.bot == True:
+            await member.add_roles(member.guild.get_role(START_BOT_ROLES))
+        else:
+            await member.add_roles(member.guild.get_role(START_MEMEBER_ROLES))
+
 
 # Реєструємо cog
 async def setup(bot):

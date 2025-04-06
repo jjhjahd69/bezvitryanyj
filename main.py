@@ -138,6 +138,7 @@ class MySuperBot(commands.Bot):
 # --- Ініціалізація та запуск ---
 print("--- [main] Налаштування інтентів... ---")
 intents = discord.Intents.default()
+intents.members = True
 intents.message_content = True # або інші потрібні інтенти
 
 print("--- [main] Створення екземпляра MySuperBot... ---")
