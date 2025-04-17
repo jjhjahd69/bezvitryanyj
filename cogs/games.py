@@ -3,7 +3,6 @@ from discord import app_commands
 from discord.ext import commands 
 from discord.utils import get
 from discord import ui
-import sqlite3
 from templates import ebmtemp
 from datetime import datetime
 import time
@@ -432,6 +431,10 @@ class GamesCog(commands.Cog):
             # Обробка інших можливих помилок
             print(f"Інша помилка: {e}")
             # await interaction.edit_original_response(content="Сталася помилка...")
+
+        if not game_data:
+            await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Вказана гра `ID {game_id}` не знайдена. Ви впевнені, що правильно вказали айді?"))
+            return
 
         game_masters_new = ""
         game_players_new = ""
