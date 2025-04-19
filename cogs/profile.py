@@ -13,6 +13,7 @@ class ProfileCog(commands.Cog):
 
     async def checkadd(self, interaction, member):
 
+        print(f"[CHECKADD] Користувач {member.name} перевіряється")
         pool = self.bot.db_pool
         if pool is None:
             # Якщо пул не створено (помилка при старті бота), повідомляємо і виходимо
@@ -22,12 +23,15 @@ class ProfileCog(commands.Cog):
         try:
             async with pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
-                    sql_query = "SELECT EXISTS(SELECT 1 FROM users WHERE userid = %s)"
+                    sql_query = "SELECT 1 FROM users WHERE userid = %s LIMIT 1"
                     query_params = (member.id,)
                     await cursor.execute(sql_query, query_params)
                     user_exist = await cursor.fetchone()
 
+                    print(f"[CHECKADD] user_exist = {user_exist} у користувача {member.name}")
+
                     if not user_exist:
+                        print(f"[CHECKADD] Користувач {member.name} не існує, виконую додавання.")
                         sql_query = """
                             INSERT INTO users (userid, adminresponse, balance, description, image)
                             VALUES (%s, %s, %s, %s, %s)
