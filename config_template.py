@@ -8,7 +8,7 @@ ID = None # int Application ID
 PREFIX = ""
 ALLOWED_GUILD = None # Якщо необхідно обмежити певним дискорд сервером
 MODERATOR_LIST = [] # userid модераторів через кому
-START_MEMEBER_ROLES = None # int айді ролі, яка видається користувачу при вході
+START_MEMBER_ROLES = None # int айді ролі, яка видається користувачу при вході
 START_BOT_ROLES = None # int айді ролі, яка видається боту на вході
 
 # Дані підключення до MYSQL

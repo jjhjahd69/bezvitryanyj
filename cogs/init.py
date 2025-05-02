@@ -34,7 +34,7 @@ class InitCog(commands.Cog):
         if member.bot == True:
             await member.add_roles(member.guild.get_role(START_BOT_ROLES))
         else:
-            await member.add_roles(member.guild.get_role(START_MEMEBER_ROLES))
+            await member.add_roles(member.guild.get_role(START_MEMBER_ROLES))
 
 
 # Реєструємо cog
