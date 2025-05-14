@@ -7,6 +7,7 @@ import aiomysql
 from datetime import datetime
 import math
 import json
+from errors import *
 from config import * # Припускаємо, що тут є налаштування БД
 from typing import Optional, Union # Додано Union
 
@@ -149,102 +150,72 @@ class RespondsCog(commands.Cog):
     ):
 
         if interaction.user.id == member.id:
-            await interaction.response.send_message(
-                embed=ebmtemp.create("Помилка", "Ви не можете залишити відгук на самого себе."),
-                ephemeral=True
-            )
-            return
+            raise CannotToRespondToMySelfError()
 
-        pool = self.bot.db_pool
-        if pool is None:
-            await interaction.response.send_message(
-                embed=ebmtemp.create("Помилка", "База даних наразі недоступна."),
-                ephemeral=True
-            )
-            return
+        game_info = self.bot.db_utils.get_game_info(game_id)
+
+        if game_info is None:
+            raise GameNotFoundError()
+
+        # Припускаємо, що 4 - це статус "Закінчена"
+        if game_info["gamestatus"] != 4:
+            raise InvalidGameStateError()
 
         try:
-            async with pool.acquire() as conn:
-                async with conn.cursor(aiomysql.DictCursor) as cursor:
+            game_players = json.loads(game_info["gameplayers"] or '[]')
+            game_masters = json.loads(game_info["gamemasters"] or '[]')
+        except json.JSONDecodeError:
+            print(f"[ПОМИЛКА JSON] Не вдалося розпарсити гравців/майстрів для гри {game_id}")
+            await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Помилка даних гри."), ephemeral=True)
+            return
 
-                    await cursor.execute('SELECT gameplayers, gamemasters, gamestatus FROM games WHERE id = %s', (game_id,))
-                    game_info = await cursor.fetchone()
+        if interaction.user.id not in game_players and interaction.user.id not in game_masters:
+            await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Ви не були учасником цієї гри."), ephemeral=True)
+            return
 
-                    if game_info is None:
-                        await interaction.response.send_message(embed=ebmtemp.create("Помилка", f"Гра з ID `{game_id}` не знайдена."), ephemeral=True)
-                        return
+        target_user_is_player = member.id in game_players
+        target_user_is_master = member.id in game_masters
+        type_value = type.value # Отримуємо int (1 або 2)
 
-                    # Припускаємо, що 4 - це статус "Закінчена"
-                    if game_info["gamestatus"] != 4:
-                        await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Ця гра ще не завершена."), ephemeral=True)
-                        return
-
-                    try:
-                        game_players = json.loads(game_info["gameplayers"] or '[]')
-                        game_masters = json.loads(game_info["gamemasters"] or '[]')
-                    except json.JSONDecodeError:
-                        print(f"[ПОМИЛКА JSON] Не вдалося розпарсити гравців/майстрів для гри {game_id}")
-                        await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Помилка даних гри."), ephemeral=True)
-                        return
-
-                    if interaction.user.id not in game_players and interaction.user.id not in game_masters:
-                        await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Ви не були учасником цієї гри."), ephemeral=True)
-                        return
-
-                    target_user_is_player = member.id in game_players
-                    target_user_is_master = member.id in game_masters
-                    type_value = type.value # Отримуємо int (1 або 2)
-
-                    # Якщо пишемо відгук на гравця (type=2), а користувач не був гравцем
-                    if type_value == REVIEW_TYPE_PLAYER and not target_user_is_player:
-                        await interaction.response.send_message(
-                            embed=ebmtemp.create("Помилка", f"Користувач {member.mention} не був **гравцем** у грі `{game_id}`."),
-                            ephemeral=True
-                        )
-                        return
-
-                    # Якщо пишемо відгук на майстра (type=1), а користувач не був майстром
-                    if type_value == REVIEW_TYPE_MASTER and not target_user_is_master:
-                        await interaction.response.send_message(
-                            embed=ebmtemp.create("Помилка", f"Користувач {member.mention} не був **майстром** у грі `{game_id}`."),
-                            ephemeral=True
-                        )
-                        return
-
-                    # Перевірка існуючого відгуку
-                    sql_exist = 'SELECT EXISTS( SELECT 1 FROM responses WHERE receiver = %s AND writer = %s AND gameid = %s AND type = %s) AS review_exists'
-                    # Передаємо type_value (int)
-                    await cursor.execute(sql_exist, (member.id, interaction.user.id, game_id, type_value))
-                    exist_result = await cursor.fetchone()
-
-                    if exist_result and exist_result['review_exists']:
-                         # Використовуємо функцію для отримання назви типу
-                        type_name = self.get_review_type_name(type_value)
-                        await interaction.response.send_message(
-                            embed=ebmtemp.create("Помилка", f"Ви вже залишали відгук на {member.mention} як на **{type_name}** у грі `{game_id}`."),
-                            ephemeral=True
-                        )
-                        return
-
-            # Викликаємо модальне вікно
-            modal = self.RespondModal(
-                target_member_id=member.id,
-                game_id=game_id,
-                role_value=type_value, # Передаємо int (1 або 2)
-                original_interaction=interaction
+        # Якщо пишемо відгук на гравця (type=2), а користувач не був гравцем
+        if type_value == REVIEW_TYPE_PLAYER and not target_user_is_player:
+            await interaction.response.send_message(
+                embed=ebmtemp.create("Помилка", f"Користувач {member.mention} не був **гравцем** у грі `{game_id}`."),
+                ephemeral=True
             )
-            await interaction.response.send_modal(modal)
+            return
 
-        except aiomysql.Error as db_err:
-            print(f"[ПОМИЛКА БД] Команда /to-respond: {db_err}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Помилка бази даних."), ephemeral=True)
-        except Exception as e:
-            print(f"[ІНША ПОМИЛКА] Команда /to-respond: {e}")
-            import traceback
-            traceback.print_exc()
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Сталася невідома помилка."), ephemeral=True)
+        # Якщо пишемо відгук на майстра (type=1), а користувач не був майстром
+        if type_value == REVIEW_TYPE_MASTER and not target_user_is_master:
+            await interaction.response.send_message(
+                embed=ebmtemp.create("Помилка", f"Користувач {member.mention} не був **майстром** у грі `{game_id}`."),
+                ephemeral=True
+            )
+            return
+
+        # Перевірка існуючого відгуку
+        sql_exist = 'SELECT EXISTS( SELECT 1 FROM responses WHERE receiver = %s AND writer = %s AND gameid = %s AND type = %s) AS review_exists'
+        # Передаємо type_value (int)
+        await cursor.execute(sql_exist, (member.id, interaction.user.id, game_id, type_value))
+        exist_result = await cursor.fetchone()
+
+        if exist_result and exist_result['review_exists']:
+                # Використовуємо функцію для отримання назви типу
+            type_name = self.get_review_type_name(type_value)
+            await interaction.response.send_message(
+                embed=ebmtemp.create("Помилка", f"Ви вже залишали відгук на {member.mention} як на **{type_name}** у грі `{game_id}`."),
+                ephemeral=True
+            )
+            return
+
+        # Викликаємо модальне вікно
+        modal = self.RespondModal(
+            target_member_id=member.id,
+            game_id=game_id,
+            role_value=type_value, # Передаємо int (1 або 2)
+            original_interaction=interaction
+        )
+        await interaction.response.send_modal(modal)
 
     # Очікує review_type як int (1 або 2)
     async def get_responds(self, member_id: int, review_type: int, page: int) -> Optional[list]:
@@ -525,4 +496,3 @@ class RespondsCog(commands.Cog):
 async def setup(bot):   
     # Переконайся, що bot.db_pool існує
     await bot.add_cog(RespondsCog(bot))
-    print("Cog RespondsCog завантажено (використовує int 1/2 для типів).")

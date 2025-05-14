@@ -36,8 +36,9 @@ class ProfileCog(commands.Cog):
         member: Optional[discord.Member] = None        # <--- Необов'язковий аргумент discord.Member
         ):
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
         member = member or interaction.user
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
         await self.checkadd(interaction, member)
 
         user_info = await self.bot.db_utils.get_user(member)
@@ -48,14 +49,14 @@ class ProfileCog(commands.Cog):
 
         embed = discord.Embed(
             title="Профіль користувача",
-            description=f"**Про себе** \n{user_info['description']}",
+            description=f"**Про себе** \n{user_info['description'] or 'Опис профілю не встановлено'}",
             color=discord.Color(value=0x2F3136),  # можна обрати інший колір
         )
         # додаємо поля
         embed.add_field(name="Рейтинг (Гравця)", value=f"{playerrate}/10", inline=True)
         embed.add_field(name="Рейтинг (Майстра)", value=f"{masterrate}/10", inline=True)
         embed.add_field(name=f"🪙 {user_info['balance']}", value="", inline=True)
-        embed.add_field(name="Зауваження адміністрації", value=user_info["adminresponse"], inline=False)
+        embed.add_field(name="Зауваження адміністрації", value=user_info["admin_response"] or 'Відсутні', inline=False)
 
         # додаємо автора
         embed.set_author(name=member.name, icon_url=member.avatar.url)
@@ -64,7 +65,7 @@ class ProfileCog(commands.Cog):
         embed.set_image(url=user_info["image"])  # заміни на своє
 
         # додаємо футер
-        embed.set_footer(text=f"ID {user_info["id"]}")
+        embed.set_footer(text=f"ID {user_info['id']}")
 
         # відправляємо ембед
         await interaction.edit_original_response(embed=embed)

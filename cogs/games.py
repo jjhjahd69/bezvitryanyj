@@ -4,23 +4,23 @@ from discord.ext import commands
 from discord.utils import get
 from discord import ui
 from templates import ebmtemp
-from datetime import datetime
 import time
 import json
 import aiomysql
 from config import *
 from typing import Optional
+from errors import *
 
 class GamesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-# --- Оновлений клас модального вікна ---
     class CreateGameModal(ui.Modal): # Використовуємо ui.Modal
-        def __init__(self, game_type_value: str, original_interaction: discord.Interaction, *args, **kwargs) -> None:
+        def __init__(self, bot, game_type_value: str, original_interaction: discord.Interaction, *args, **kwargs) -> None:
             super().__init__(title="Створення гри", *args, **kwargs)
 
             self.game_type = game_type_value
+            self.bot = bot
             self.original_interaction = original_interaction
 
             # --- Виправлено тут: InputText -> TextInput ---
@@ -39,83 +39,23 @@ class GamesCog(commands.Cog):
             ))
 
         async def on_submit(self, interaction: discord.Interaction):
-            print("--- [Modal Callback] ЗАПУЩЕНО ---") # <--- Друк на старті
-            try:
-                print("--- [Modal Callback] Спроба defer... ---")
                 # Спочатку відкладаємо відповідь
                 await interaction.response.defer(ephemeral=True, thinking=True)
-                print("--- [Modal Callback] Defer виконано ---")
-
-                # Отримуємо пул
-                pool = interaction.client.db_pool
-                if pool is None:
-                    print("--- [Modal Callback] ПОМИЛКА: Пул = None ---")
-                    await interaction.followup.send(embed=ebmtemp.create("Помилка", "База даних недоступна."), ephemeral=True)
-                    return
-                print(f"--- [Modal Callback] Пул отримано: {pool} ---")
 
                 # Отримуємо дані з полів модалки
                 game_name = self.children[0].value
                 game_description = self.children[1].value
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 creator_id = interaction.user.id
-                print(f"--- [Modal Callback] Отримано дані: name='{game_name}', desc_len={len(game_description)}, creator={creator_id}, type={self.game_type} ---")
 
-                # Готуємо дані для SQL
-                initial_masters_json = json.dumps([])
-                initial_players_json = json.dumps([])
-                initial_status = 1 # Зареєстрована
-                print("--- [Modal Callback] Дані для SQL підготовлено ---")
+                game_id = await self.bot.db_utils.create_game(game_name, game_description, self.game_type, creator_id)
 
-                # Робота з базою даних
-                print("--- [Modal Callback] Спроба підключення до БД через пул... ---")
-                async with      pool.acquire() as conn:
-                    print(f"--- [Modal Callback] З'єднання БД отримано: {conn} ---")
-                    async with conn.cursor(aiomysql.DictCursor) as cursor:
-                        print(f"--- [Modal Callback] Курсор БД створено: {cursor} ---")
-                        sql = """
-                            INSERT INTO games
-                            (gamename, gamedescription, gametype, gamecreatorid, gamemasters, gameplayers, gamestatus, gamecreationdate)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """
-                        params = (
-                            game_name, game_description, self.game_type, creator_id,
-                            initial_masters_json, initial_players_json, initial_status, timestamp
-                        )
-                        print(f"--- [Modal Callback] Спроба виконати INSERT з параметрами: {params} ---")
-                        await cursor.execute(sql, params)
-                        print(f"--- [Modal Callback] INSERT виконано, affected rows: {cursor.rowcount} ---")
+                # Готуємо embed
+                success_embed = ebmtemp.create("Успіх", f"Гра `{game_name}` успішно додана до реєстру! Її унікальний індитифікатор: `ID {game_id}`")
 
-                        game_id = cursor.lastrowid
-                        print(f"--- [Modal Callback] Отримано game_id: {game_id} ---")
+                # Надсилаємо відповідь користувачу
 
-                        # Готуємо embed
-                        success_embed = ebmtemp.create("Успіх", f"Гра `{game_name}` успішно додана до реєстру! Її унікальний індитифікатор: `ID {game_id}`")
-                        print("--- [Modal Callback] Embed успіху створено ---")
-                        # Надсилаємо відповідь користувачу
-                        print("--- [Modal Callback] Спроба надіслати followup... ---")
-                        await interaction.followup.send(embed=success_embed, ephemeral=True)
-                        print("--- [Modal Callback] Followup надіслано ---")
+                await interaction.followup.send(embed=success_embed, ephemeral=True)
 
-            except aiomysql.Error as db_err:
-                # Ловимо помилки бази даних
-                print(f"!!! [Modal Callback] ПОМИЛКА БАЗИ ДАНИХ: {db_err} !!!")
-                # Спробуємо надіслати повідомлення про помилку
-                try:
-                    await interaction.followup.send(embed=ebmtemp.create("Помилка", "Помилка бази даних при створенні гри."), ephemeral=True)
-                except Exception as followup_err:
-                     print(f"!!! [Modal Callback] ПОМИЛКА надсилання followup після помилки БД: {followup_err} !!!")
-            except Exception as e:
-                # Ловимо будь-які інші помилки
-                print(f"!!! [Modal Callback] ІНША ПОМИЛКА: {e} !!!")
-                import traceback
-                traceback.print_exc() # Друкуємо повний traceback для невідомих помилок
-                # Спробуємо надіслати повідомлення про помилку
-                try:
-                    await interaction.followup.send(embed=ebmtemp.create("Помилка", "Сталася невідома помилка при створенні гри."), ephemeral=True)
-                except Exception as followup_err:
-                     print(f"!!! [Modal Callback] ПОМИЛКА надсилання followup після іншої помилки: {followup_err} !!!")
-            print("--- [Modal Callback] ЗАВЕРШЕНО ---") # <--- Друк в кінці
 
 
     @app_commands.command(name='create-game', description='Створити гру')
@@ -136,7 +76,7 @@ class GamesCog(commands.Cog):
         selected_game_type = game_type.value
 
         # Створюємо екземпляр модального вікна, передаючи тип гри та початкову взаємодію
-        modal = self.CreateGameModal(game_type_value=selected_game_type, original_interaction=interaction)
+        modal = self.CreateGameModal(bot=self.bot, game_type_value=selected_game_type, original_interaction=interaction)
 
         # Надсилаємо модальне вікно користувачу
         await interaction.response.send_modal(modal)
@@ -153,63 +93,25 @@ class GamesCog(commands.Cog):
         # 2. Завжди відкладай відповідь при роботі з БД
         await interaction.response.defer(ephemeral=True)
 
-        # 3. Отримуємо пул з об'єкта бота
-        pool = self.bot.db_pool
-        if pool is None:
-            # Якщо пулу немає (помилка при старті), повідомляємо
-            await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "База даних наразі недоступна."))
-            return
+        game = await self.bot.db_utils.get_game_info(game_id) # Отримуємо результат асинхронно
 
-        game = None # Змінна для даних гри
-        try:
-            # 4. Асинхронно отримуємо з'єднання та курсор з пулу
-            async with pool.acquire() as conn:
-                # Використовуємо DictCursor, щоб звертатися до даних за іменами стовпців
-                async with conn.cursor(aiomysql.DictCursor) as cursor:
+        # 6. Перевірка, чи знайдено гру
+        if game is None:
+            raise GameNotFoundError()
 
-                    # 5. Виконуємо SELECT запит (з %s і PK 'id')
-                    #    ЗАМІНИ 'id' на реальну назву Primary Key стовпця у твоїй таблиці Games
-                    await cursor.execute("SELECT * FROM games WHERE id = %s", (game_id,))
-                    game = await cursor.fetchone() # Отримуємо результат асинхронно
+        if game['gamestatus'] > 2: # Припускаємо: 1=Зареєстрована, 2=Затверджена, 3=Йде, 4=Закінчена
+            raise CannotDeleteGame()
 
-                    # 6. Перевірка, чи знайдено гру
-                    if game is None:
-                        await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Вказаної вами гри не існує."))
-                        return # Виходимо
+        creator_id = game['gamecreatorid']
 
-                    # 7. Перевірка статусу гри
-                    #    ЗАМІНИ 'gamestatus' на реальну назву стовпця статусу
-                    #    Використовуємо game.get('назва_стовпця', 0), щоб уникнути помилки, якщо стовпця немає
-                    if game.get('gamestatus', 0) > 2: # Припускаємо: 1=Зареєстрована, 2=Затверджена, 3=Йде, 4=Закінчена
-                        await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Ви не можете видалити гру, що йде або завершена."))
-                        return # Виходимо
+        if interaction.user.id != game['gamecreatorid'] and interaction.user.id not in MODERATOR_LIST:
+            raise NotEnoughtPermissions()
 
-                    # 8. Перевірка прав доступу (використовуємо interaction.user.id)
-                    #    ЗАМІНИ 'gamecreatorid' на реальну назву стовпця ID творця
-                    creator_id = game.get('gamecreatorid')
-                    if interaction.user.id == creator_id or interaction.user.id in MODERATOR_LIST:
+        await self.bot.db_utils.delete_game(game_id)
 
-                        # 9. Виконуємо DELETE запит (з %s і PK 'id')
-                        #    ЗАМІНИ 'id' на реальну назву Primary Key стовпця
-                        await cursor.execute("DELETE FROM games WHERE id = %s", (game_id,))
-                        # await conn.commit() # Не потрібно, якщо autocommit=True в пулі
+        game_name = game['gamename']
+        await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Гра `{game_name} (ID {game_id})` успішно видалена з реєстру."))
 
-                        # 10. Готуємо повідомлення про успіх
-                        #     ЗАМІНИ 'gamename' на реальну назву стовпця назви гри
-                        game_name = game.get('gamename', 'Невідома гра')
-                        await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Гра `{game_name} (ID {game_id})` успішно видалена з реєстру."))
-
-                    else:
-                        # 11. Повідомлення про відсутність прав
-                        await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Для вказаної гри, ви не маєте повноважень для видалення."))
-
-        except aiomysql.Error as db_err: # Ловимо помилки саме від aiomysql/MySQL
-            print(f"[ПОМИЛКА БД] Команда deletegame (game_id: {game_id}): {db_err}")
-            await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Виникла помилка при роботі з базою даних."))
-        except Exception as e: # Ловимо будь-які інші непередбачувані помилки
-            print(f"[ІНША ПОМИЛКА] Команда deletegame (game_id: {game_id}): {e}")
-            # traceback.print_exc() # Можна розкоментувати для повного трейсбеку в консоль/логи
-            await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Сталася невідома внутрішня помилка."))
 
     @app_commands.command(name='game-member', description='Керування учасниками гри')
     @app_commands.describe(
@@ -357,43 +259,15 @@ class GamesCog(commands.Cog):
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         if not interaction.user.id in MODERATOR_LIST:
-            await interaction.edit_original_response(embed=ebmtemp.create("Помилка", f"Ви не маєте права на зміну статусу гри."), ephemeral=True)
-            return
-
-        pool = self.bot.db_pool
-        if pool is None:
-            # Якщо пул не створено (помилка при старті бота), повідомляємо і виходимо
-            await interaction.edit_original_response(content="Помилка: База даних недоступна.") # Або інша відповідь
-            return
+            raise NotEnoughtPermissions()
             
-        try:
-            async with pool.acquire() as conn:
-                async with conn.cursor(aiomysql.Cursor) as cursor:
-                    sql_query = "SELECT EXISTS(SELECT 1 FROM games WHERE id = %s)"
-                    query_params = (game_id,)
-                    await cursor.execute(sql_query, query_params)
-                    exists_result = await cursor.fetchone()
-                    print(f"--- [DEBUG setgamestatus] Тип exists_result ПІСЛЯ await: {type(exists_result)}") # Додай цю перевірку
+        game_info = await self.bot.db_utils.get_game_info(game_id)
 
-                    if not exists_result or exists_result[0] == 0:
-                        await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Вказаної вами гри не існує."))
-                        return
+        if game_info is None:
+            raise GameNotFoundError()
 
-                    sql_query = "UPDATE games SET gamestatus = %s WHERE id = %s"
-                    query_params = (status.value, game_id, )
-                    await cursor.execute(sql_query, query_params)
-
-                    await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Гра `ID {game_id}` успішно отримала статус `{status.name}`"))
-                
-        except aiomysql.Error as db_err:
-            # Обробка помилок, специфічних для бази даних
-            print(f"Помилка бази даних: {db_err}")
-            # Повідом користувачу про помилку
-            # await interaction.edit_original_response(content="Помилка бази даних...")
-        except Exception as e:
-            # Обробка інших можливих помилок
-            print(f"Інша помилка: {e}")
-            # await interaction.edit_original_response(content="Сталася помилка...")
+        await self.bot.db_utils.set_game_status(status, game_id)
+        await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Гра `ID {game_id}` успішно отримала статус `{status.name}`"))
 
     @app_commands.command(name='game-info', description='Інформація про гру')
     @app_commands.describe(
@@ -407,42 +281,22 @@ class GamesCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True, thinking=True)
 
-        pool = self.bot.db_pool
-        if pool is None:
-            # Якщо пул не створено (помилка при старті бота), повідомляємо і виходимо
-            await interaction.edit_original_response(content="Помилка: База даних недоступна.") # Або інша відповідь
-            return
-
-        try:
-            async with pool.acquire() as conn:
-                async with conn.cursor(aiomysql.DictCursor) as cursor:
-                    sql_query = "SELECT * FROM games WHERE id = %s"
-                    query_params = (game_id,)
-                    await cursor.execute(sql_query, query_params)
-                    game_data = await cursor.fetchone()
-                    print(game_data)
-                
-        except aiomysql.Error as db_err:
-            # Обробка помилок, специфічних для бази даних
-            print(f"Помилка бази даних: {db_err}")
-            # Повідом користувачу про помилку
-            # await interaction.edit_original_response(content="Помилка бази даних...")
-        except Exception as e:
-            # Обробка інших можливих помилок
-            print(f"Інша помилка: {e}")
-            # await interaction.edit_original_response(content="Сталася помилка...")
+        game_data = await self.bot.db_utils.get_game_info(game_id)
 
         if not game_data:
-            await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Вказана гра `ID {game_id}` не знайдена. Ви впевнені, що правильно вказали айді?"))
-            return
+            raise GameNotFoundError()
+
+        masters, players = await self.bot.db_utils.get_game_participants(game_id)
+
+        print(masters, players)
 
         game_masters_new = ""
         game_players_new = ""
 
-        for i in json.loads(game_data["gamemasters"]):
+        for i in masters:
             game_masters_new += f"<@{i}> "
 
-        for i in json.loads(game_data["gameplayers"]):
+        for i in players:
             game_players_new += f"<@{i}> "
 
         game_status_choice = {
@@ -453,15 +307,15 @@ class GamesCog(commands.Cog):
         }
 
         embed = discord.Embed(
-            title=f"Гра: {game_data["gamename"]}",
-            description=f"**Опис** \n{game_data["gamedescription"]}",
+            title=f"Гра: {game_data['name']}",
+            description=f"**Опис** \n{game_data['description']}",
             color=discord.Color(value=0x2F3136),
         )
         # додаємо поля
-        embed.add_field(name="Тип", value=f"{game_data["gametype"]}", inline=True)
-        embed.add_field(name="Творець", value=f"<@{game_data["gamecreatorid"]}>", inline=True)
+        embed.add_field(name="Тип", value=f"{game_data['type']}", inline=True)
+        embed.add_field(name="Творець", value=f"<@{game_data['creator_id']}>", inline=True)
         embed.add_field(name="Ведучі", value=f"{game_masters_new}", inline=True)
-        embed.add_field(name="Статус", value=f"{game_status_choice[str(game_data["gamestatus"])]}", inline=True)
+        embed.add_field(name="Статус", value=f"{game_status_choice[str(game_data['status'])]}", inline=True)
         embed.add_field(name="Гравці", value=f"{game_players_new}", inline=False)
 
         # додаємо автора
