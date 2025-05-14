@@ -99,17 +99,17 @@ class GamesCog(commands.Cog):
         if game is None:
             raise GameNotFoundError()
 
-        if game['gamestatus'] > 2: # Припускаємо: 1=Зареєстрована, 2=Затверджена, 3=Йде, 4=Закінчена
+        if game['status'] > 2: # Припускаємо: 1=Зареєстрована, 2=Затверджена, 3=Йде, 4=Закінчена
             raise CannotDeleteGame()
 
-        creator_id = game['gamecreatorid']
+        creator_id = game['creator_id']
 
-        if interaction.user.id != game['gamecreatorid'] and interaction.user.id not in MODERATOR_LIST:
+        if interaction.user.id != game['creator_id'] and interaction.user.id not in MODERATOR_LIST:
             raise NotEnoughtPermissions()
 
         await self.bot.db_utils.delete_game(game_id)
 
-        game_name = game['gamename']
+        game_name = game['name']
         await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Гра `{game_name} (ID {game_id})` успішно видалена з реєстру."))
 
 
@@ -141,101 +141,28 @@ class GamesCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True, thinking=True)
 
-        pool = self.bot.db_pool
-        if pool is None:
-            # Якщо пул не створено (помилка при старті бота), повідомляємо і виходимо
-            await interaction.edit_original_response(content="Помилка: База даних недоступна.") # Або інша відповідь
-            return
+        game_data = await self.bot.db_utils.get_game_info(game_id)
 
-        try:
-            async with pool.acquire() as conn:
-                async with conn.cursor(aiomysql.DictCursor) as cursor:
+        if not game_data:
+            raise GameNotFoundError()
 
-                    sql_query = "SELECT * FROM games WHERE id = %s"
-                    query_params = (game_id,)
-                    await cursor.execute(sql_query, query_params)
+        if interaction.user.id != game_data["creator_id"] and not interaction.user.id in MODERATOR_LIST:
+            raise NotEnoughtPermissions()
 
-                    game_data = await cursor.fetchone()
+        if game_data["status"] == 4 and not interaction.user.id in MODERATOR_LIST:
+            raise InvalidGameStateError()
 
-                    if not game_data:
-                        await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Вказаної вами гри не існує."))
-                        return
+        game_member_exist = await self.bot.db_utils.game_member_check_exist(member, game_id, role)
 
-                    if interaction.user.id != game_data["gamecreatorid"] and not interaction.user.id in MODERATOR_LIST:
-                        await interaction.edit_original_response(embed=ebmtemp.create("Помилка", f"Ви не маєте права на керування учасниками цієї гри."))
-                        return
+        print(game_member_exist)
+        if game_member_exist and action.value == 1:
+            raise UserInGameAlreadyError()
 
-                    if game_data["gamestatus"] == 4 and not interaction.user.id in MODERATOR_LIST:
-                        await interaction.edit_original_response(embed=ebmtemp.create("Помилка", f"Керувати завершеними іграми заборонено."))
-                        return
+        if not game_member_exist and action.value == 2:
+            raise UserNotInGameError()
 
-                    game_masters = json.loads(game_data["gamemasters"])
-                    game_players = json.loads(game_data["gameplayers"])
-
-                    if role.value == 1:
-
-                        if action.value == 1:
-
-                            if member.id in game_masters:
-                                await interaction.edit_original_response(embed=ebmtemp.create("Помилка", f"Користувач <@{member.id}> вже є майстром у грі"))
-                                return
-
-                            game_masters.append(member.id)
-                            sql_query = "UPDATE games SET gamemasters = %s WHERE id = %s"
-                            query_params = (json.dumps(game_masters), game_id, )
-                            await cursor.execute(sql_query, query_params)
-                            await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Користувач <@{member.id}> став майстром гри!"))
-
-                        else:
-
-                            if member.id not in game_masters:
-                                await interaction.edit_original_response(embed=ebmtemp.create("Помилка", f"Користувач <@{member.id}> не був майстром гри!"))
-                                return
-
-                            game_masters.remove(member.id)
-                            sql_query = "UPDATE games SET gamemasters = %s WHERE id = %s"
-                            query_params = (json.dumps(game_masters), game_id, )
-                            await cursor.execute(sql_query, query_params)
-                            await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Користувач <@{member.id}> більше не є майстром гри!"))
-                    
-
-                    else:
-
-                        if action.value == 1:
-
-                            if member.id in game_players:
-                                await interaction.edit_original_response(embed=ebmtemp.create("Помилка", f"Користувач <@{member.id}> вже є учасником гри"))
-                                return
-
-                            game_players.append(member.id)
-                            sql_query = "UPDATE games SET gameplayers = %s WHERE id = %s"
-                            query_params = (json.dumps(game_players), game_id, )
-                            await cursor.execute(sql_query, query_params)
-
-                            await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Користувач <@{member.id}> тепер учасник гри!"))
-
-                        else:
-
-                            if member.id not in game_players:
-                                await interaction.edit_original_response(embed=ebmtemp.create("Помилка", f"Користувач <@{member.id}> не був учасником гри!"))
-                                return
-
-                            game_players.remove(member.id)
-                            sql_query = "UPDATE games SET gameplayers = %s WHERE id = %s"
-                            query_params = (json.dumps(game_players), game_id, )
-            
-                            await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Користувач <@{member.id}> більше не є учасником гри!"))
- 
-        except aiomysql.Error as db_err:
-            # Обробка помилок, специфічних для бази даних
-            print(f"Помилка бази даних: {db_err}")
-            # Повідом користувачу про помилку
-            # await interaction.edit_original_response(content="Помилка бази даних...")
-        except Exception as e:
-            # Обробка інших можливих помилок
-            print(f"Інша помилка: {e}")
-            # await interaction.edit_original_response(content="Сталася помилка...")
-
+        await self.bot.db_utils.actions_with_game_member(action, member, game_id, role)
+        await interaction.edit_original_response(embed=ebmtemp.create("Успіх", f"Дія `{action.name}` над користувачем **{member.name}** та грою: **{game_data['name']}** `(ID: {game_id})` виконана!"))
 
     @app_commands.command(name='set-game-status', description='Встановити статус грі')
     @app_commands.describe(

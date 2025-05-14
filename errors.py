@@ -30,3 +30,18 @@ class CannotToRespondToMySelfError(LogicError):
     """Виняток, коли стан гри не дозволяє виконати дію."""
     def __init__(self, message="Ви не можете залишити відгук на самого себе."): # <--- Ще один дефолтний текст
         super().__init__(message)
+
+class UserInGameAlreadyError(LogicError):
+    """Виняток, коли стан гри не дозволяє виконати дію."""
+    def __init__(self, message="Користувач вже є у цій грі."): # <--- Ще один дефолтний текст
+        super().__init__(message)
+
+class UserNotInGameError(LogicError):
+    """Виняток, коли стан гри не дозволяє виконати дію."""
+    def __init__(self, message="Користувача вже немає у грі."): # <--- Ще один дефолтний текст
+        super().__init__(message)
+
+class RatingOutOfRangeError(LogicError):
+    """Виняток, коли стан гри не дозволяє виконати дію."""
+    def __init__(self, message="Вказана оцінка за межами проміжку 1 - 10!"): # <--- Ще один дефолтний текст
+        super().__init__(message)

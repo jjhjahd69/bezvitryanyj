@@ -1,3 +1,5 @@
+# responds.py
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -34,9 +36,10 @@ class RespondsCog(commands.Cog):
     # --- Модальне вікно для написання відгуку ---
     class RespondModal(ui.Modal):
         # Очікуємо role_value як int (1 або 2)
-        def __init__(self, target_member_id: int, game_id: int, role_value: int, original_interaction: discord.Interaction) -> None:
+        def __init__(self, bot, target_member_id: int, game_id: int, role_value: int, original_interaction: discord.Interaction) -> None:
             super().__init__(title="Написання відгуку")
 
+            self.bot = bot
             self.target_member_id = target_member_id
             self.game_id = game_id
             self.role_value = role_value # Зберігаємо int (1 або 2)
@@ -64,71 +67,25 @@ class RespondsCog(commands.Cog):
             respond_text_value = self.respond_text.value
             respond_rate_value = self.respond_rate.value
 
-            try:
-                respond_rate_int = int(respond_rate_value)
-                if not (1 <= respond_rate_int <= 10):
-                    raise ValueError("Оцінка поза межами 1-10")
-            except ValueError:
-                await interaction.response.send_message(
-                    embed=ebmtemp.create("Помилка", "Оцінка має бути цілим числом від 1 до 10."),
-                    ephemeral=True
-                )
-                return
+
+            respond_rate_int = int(respond_rate_value)
+            if not (1 <= respond_rate_int <= 10):
+                raise RatingOutOfRangeError()
 
             await interaction.response.defer(ephemeral=True, thinking=True)
 
-            pool = interaction.client.db_pool
-            if pool is None:
-                await interaction.followup.send(embed=ebmtemp.create("Помилка", "База даних недоступна."), ephemeral=True)
-                return
+            writer_id = interaction.user.id
 
-            try:
-                timestamp = datetime.now()
-                timestamp_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                writer_id = interaction.user.id
+            await self.bot.db_utils.add_response(
+                self.target_member_id,
+                writer_id,
+                self.role_value, # Передаємо int (1 або 2)
+                self.game_id,
+                respond_text_value,
+                respond_rate_int,
+                )
 
-                async with pool.acquire() as conn:
-                    async with conn.cursor() as cursor:
-                        # Переконайся, що стовпець `type` приймає INT
-                        sql_insert = """
-                            INSERT INTO responses (receiver, writer, type, gameid, text, rate, date)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """
-                        params_insert = (
-                            self.target_member_id,
-                            writer_id,
-                            self.role_value, # Передаємо int (1 або 2)
-                            self.game_id,
-                            respond_text_value,
-                            respond_rate_int,
-                            timestamp_str
-                        )
-                        await cursor.execute(sql_insert, params_insert)
-                        # await conn.commit()
-
-                await interaction.followup.send(embed=ebmtemp.create("Успіх", "Ваш відгук успішно доданий!"), ephemeral=True)
-
-            except aiomysql.Error as db_err:
-                print(f"[ПОМИЛКА БД] Модалка RespondModal: {db_err}")
-                await interaction.followup.send(embed=ebmtemp.create("Помилка", "Помилка бази даних при збереженні відгуку."), ephemeral=True)
-            except Exception as e:
-                print(f"[ІНША ПОМИЛКА] Модалка RespondModal: {e}")
-                import traceback
-                traceback.print_exc()
-                await interaction.followup.send(embed=ebmtemp.create("Помилка", "Сталася невідома помилка при збереженні відгуку."), ephemeral=True)
-
-        async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
-            print(f"Помилка в RespondModal: {error}")
-            # Уникаємо повторної відповіді, якщо вона вже була (наприклад, з on_submit)
-            if not interaction.response.is_done():
-                 try:
-                     await interaction.response.send_message(
-                         embed=ebmtemp.create("Помилка", "Виникла помилка при обробці форми."),
-                         ephemeral=True
-                    )
-                 except discord.InteractionResponded:
-                      # Якщо відповідь все ж була відправлена іншим шляхом
-                      await interaction.followup.send(embed=ebmtemp.create("Помилка", "Виникла помилка при обробці форми."), ephemeral=True)
+            await interaction.followup.send(embed=ebmtemp.create("Успіх", "Ваш відгук успішно доданий!"), ephemeral=True)
 
 
     @app_commands.command(name='to-respond', description='Додати відгук користувачу за результатами гри')
@@ -152,26 +109,19 @@ class RespondsCog(commands.Cog):
         if interaction.user.id == member.id:
             raise CannotToRespondToMySelfError()
 
-        game_info = self.bot.db_utils.get_game_info(game_id)
+        game_info = await self.bot.db_utils.get_game_info(game_id)
 
         if game_info is None:
             raise GameNotFoundError()
 
         # Припускаємо, що 4 - це статус "Закінчена"
-        if game_info["gamestatus"] != 4:
+        if game_info["status"] != 4:
             raise InvalidGameStateError()
 
-        try:
-            game_players = json.loads(game_info["gameplayers"] or '[]')
-            game_masters = json.loads(game_info["gamemasters"] or '[]')
-        except json.JSONDecodeError:
-            print(f"[ПОМИЛКА JSON] Не вдалося розпарсити гравців/майстрів для гри {game_id}")
-            await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Помилка даних гри."), ephemeral=True)
-            return
+        game_masters, game_players = await self.bot.db_utils.get_game_participants(game_id)
 
-        if interaction.user.id not in game_players and interaction.user.id not in game_masters:
-            await interaction.response.send_message(embed=ebmtemp.create("Помилка", "Ви не були учасником цієї гри."), ephemeral=True)
-            return
+        if interaction.user.id not in (game_masters + game_players):
+            raise LogicError("Ви не є учасником цієї гри!")
 
         target_user_is_player = member.id in game_players
         target_user_is_master = member.id in game_masters
@@ -179,25 +129,14 @@ class RespondsCog(commands.Cog):
 
         # Якщо пишемо відгук на гравця (type=2), а користувач не був гравцем
         if type_value == REVIEW_TYPE_PLAYER and not target_user_is_player:
-            await interaction.response.send_message(
-                embed=ebmtemp.create("Помилка", f"Користувач {member.mention} не був **гравцем** у грі `{game_id}`."),
-                ephemeral=True
-            )
-            return
+            raise UserNotInGameError("Користувач не був учасником цієї гри.")
 
         # Якщо пишемо відгук на майстра (type=1), а користувач не був майстром
         if type_value == REVIEW_TYPE_MASTER and not target_user_is_master:
-            await interaction.response.send_message(
-                embed=ebmtemp.create("Помилка", f"Користувач {member.mention} не був **майстром** у грі `{game_id}`."),
-                ephemeral=True
-            )
-            return
+            raise UserNotInGameError("Користувач не був майстром цієї гри.")
 
         # Перевірка існуючого відгуку
-        sql_exist = 'SELECT EXISTS( SELECT 1 FROM responses WHERE receiver = %s AND writer = %s AND gameid = %s AND type = %s) AS review_exists'
-        # Передаємо type_value (int)
-        await cursor.execute(sql_exist, (member.id, interaction.user.id, game_id, type_value))
-        exist_result = await cursor.fetchone()
+        exist_result = await self.bot.db_utils.check_response_exist(member, interaction, game_id, type.value)
 
         if exist_result and exist_result['review_exists']:
                 # Використовуємо функцію для отримання назви типу
@@ -210,66 +149,16 @@ class RespondsCog(commands.Cog):
 
         # Викликаємо модальне вікно
         modal = self.RespondModal(
+            self.bot,
             target_member_id=member.id,
             game_id=game_id,
             role_value=type_value, # Передаємо int (1 або 2)
             original_interaction=interaction
         )
+
         await interaction.response.send_modal(modal)
 
-    # Очікує review_type як int (1 або 2)
-    async def get_responds(self, member_id: int, review_type: int, page: int) -> Optional[list]:
-        offset = (page - 1) * PAGE_SIZE
-        pool = self.bot.db_pool
-        if pool is None:
-            print("[ПОМИЛКА БД] Пул недоступний в get_responds.")
-            return None
 
-        try:
-            async with pool.acquire() as conn:
-                async with conn.cursor() as cursor:
-                    # WHERE type = %s буде працювати з int
-                    sql_select = f"""
-                        SELECT writer, type, gameid, text, rate, date
-                        FROM responses
-                        WHERE receiver = %s AND type = %s
-                        ORDER BY date DESC
-                        LIMIT %s OFFSET %s
-                    """
-                    params_select = (member_id, review_type, PAGE_SIZE, offset)
-                    await cursor.execute(sql_select, params_select)
-                    reviews = await cursor.fetchall()
-                    return reviews
-
-        except aiomysql.Error as db_err:
-            print(f"[ПОМИЛКА БД] get_responds для member {member_id}, type {review_type}: {db_err}")
-            return None
-        except Exception as e:
-            print(f"[ІНША ПОМИЛКА] get_responds для member {member_id}, type {review_type}: {e}")
-            return None
-
-    # Очікує review_type як int (1 або 2)
-    async def get_total_reviews(self, member_id: int, review_type: int) -> int:
-        pool = self.bot.db_pool
-        if pool is None:
-            print("[ПОМИЛКА БД] Пул недоступний в get_total_reviews.")
-            return 0
-
-        try:
-            async with pool.acquire() as conn:
-                async with conn.cursor(aiomysql.DictCursor) as cursor:
-                     # WHERE type = %s буде працювати з int
-                    sql_count = "SELECT COUNT(*) as total FROM responses WHERE receiver = %s AND type = %s"
-                    params_count = (member_id, review_type)
-                    await cursor.execute(sql_count, params_count)
-                    result = await cursor.fetchone()
-                    return result['total'] if result else 0
-        except aiomysql.Error as db_err:
-            print(f"[ПОМИЛКА БД] get_total_reviews для member {member_id}, type {review_type}: {db_err}")
-            return 0
-        except Exception as e:
-            print(f"[ІНША ПОМИЛКА] get_total_reviews для member {member_id}, type {review_type}: {e}")
-            return 0
 
     class ReviewsView(discord.ui.View):
          # Очікуємо initial_review_type як int (1 або 2)
@@ -328,8 +217,8 @@ class RespondsCog(commands.Cog):
             await interaction.response.defer() # Відповідь на взаємодію компонента
 
             # Отримуємо відгуки та кількість (передаємо int)
-            reviews = await self.cog_instance.get_responds(self.user_id, self.current_review_type, self.current_page)
-            total_reviews = await self.cog_instance.get_total_reviews(self.user_id, self.current_review_type)
+            reviews = await self.bot.db_utils.get_responds(self.user_id, self.current_review_type, self.current_page, PAGE_SIZE)
+            total_reviews = await self.bot.db_utils.get_total_reviews(self.user_id, self.current_review_type)
 
             if reviews is None:
                  await interaction.followup.send(embed=ebmtemp.create("Помилка", "Не вдалося завантажити відгуки."), ephemeral=True)
@@ -432,8 +321,8 @@ class RespondsCog(commands.Cog):
         initial_page = 1
 
         # Отримуємо дані (передаємо int)
-        reviews = await self.get_responds(target_member.id, initial_review_type, initial_page)
-        total_reviews = await self.get_total_reviews(target_member.id, initial_review_type)
+        reviews = await self.bot.db_utils.get_responds(target_member.id, initial_review_type, initial_page, PAGE_SIZE)
+        total_reviews = await self.bot.db_utils.get_total_reviews(target_member.id, initial_review_type)
 
         if reviews is None:
             await interaction.edit_original_response(embed=ebmtemp.create("Помилка", "Не вдалося завантажити відгуки."))
@@ -493,6 +382,6 @@ class RespondsCog(commands.Cog):
              print(f"Незначна помилка при фінальному оновленні View: {e}")
 
 
-async def setup(bot):   
+async def setup(bot):
     # Переконайся, що bot.db_pool існує
     await bot.add_cog(RespondsCog(bot))
