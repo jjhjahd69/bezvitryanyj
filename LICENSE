@@ -1,31 +1,21 @@
-Non-Commercial Dev License v1.0  
-© 2025 jjhjahd69
+MIT License
 
-1. Визначення  
-"Розповсюдження" — публічний показ, копіювання, поширення модифікацій.  
-"Комерційне використання" — будь-яке використання з метою отримання прибутку (продаж, підписка, реклама тощо).
+Copyright (c) 2025 Mykyta Kuznetsov
 
-2. Дозвіл  
-Автор дозволяє безкоштовно:  
-– Використовувати цей код у будь-яких особистих, навчальних та дослідницьких цілях;  
-– Копіювати, змінювати, поширювати та форкати репозиторій;  
-– Створювати похідні проєкти.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-3. Обмеження  
-Заборонено використовувати будь-яку частину цього коду з комерційною метою.  
-Комерційне використання включає, але не обмежується:  
-– Продаж програмного забезпечення чи сервісів, що містять цей код;  
-– Інтеграцію в продукти/сервіси з платним доступом;  
-– Показ реклами або монетизацію будь-яким способом.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-4. Атрибуція  
-У всіх копіях та модифікаціях має зберігатися цей файл `LICENSE` з вказаним автором.
-
-5. Авторське право
-Автор залишає за собою всі права надані йому законодавством, зокрема право на комерційне використання, зміну, поширення та відкликання дозволу на використання цього програмного забезпечення будь-коли.
-
-6. Відмова від відповідальності  
-Код надається “як є”, без жодних гарантій. Автор не несе відповідальності за будь-які збитки чи проблеми, що виникли внаслідок використання.
-
-7. Юрисдикція  
-Цей договір регулюється законодавством України.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
